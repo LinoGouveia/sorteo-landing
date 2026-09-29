@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gran Sorteo Supricom · Caracas",
-  description: "Ruleta del sorteo de clientes de Supricom Caracas: cada $5.000 en compras del mes es 1 ticket.",
+  title: "Gran Sorteo Supricom",
+  description: "Ruleta del sorteo de clientes de Supricom: cada compra del mes suma tickets.",
   robots: { index: false, follow: false },
 };
 

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { conCache, pedirAlPanel } from "@/lib/panel";
 import { respuestaError, sinCache } from "@/lib/respuestas";
-import type { Ganador } from "@/lib/tipos";
+import type { RespuestaGanadores } from "@/lib/tipos";
 
 export const dynamic = "force-dynamic";
 
-type Ganadores = { ganadores: Ganador[]; ganadoresError: string | null };
+type Ganadores = Omit<RespuestaGanadores, "desactualizado">;
 
 /**
  * Ganadores oficiales (panel: GET /api/sorteo/ganadores). Cada pantalla lo

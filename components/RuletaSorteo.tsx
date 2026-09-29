@@ -22,8 +22,16 @@ export interface SegmentoRuleta {
 export interface RuletaHandle {
   /** Anima el giro hasta el segmento del cliente `id`. Resuelve al detenerse (false si no está en la ruleta). */
   girarHacia: (id: number) => Promise<boolean>;
-  /** Rotación actual en grados (también durante el giro). La usa la grabación del giro. */
-  rotacion: () => number;
+  /** Datos del último giro (rotación inicial y final, duración, segmentos): con ellos se genera el video. */
+  ultimoGiro: () => PlanGiroRuleta | null;
+}
+
+export interface PlanGiroRuleta {
+  desde: number;
+  hasta: number;
+  /** Milisegundos. */
+  duracion: number;
+  segmentos: SegmentoDibujado[];
 }
 
 interface Props {
@@ -100,22 +108,6 @@ function contextoAudio() {
   }
 }
 
-/**
- * Salida de audio para la grabación del giro: los mismos clics y la fanfarria
- * que suenan en la pantalla también entran en el video.
- */
-let salidaGrabacion: MediaStreamAudioDestinationNode | null = null;
-export function audioParaGrabar(): MediaStream | null {
-  const ctx = contextoAudio();
-  if (!ctx) return null;
-  try {
-    salidaGrabacion ??= ctx.createMediaStreamDestination();
-    return salidaGrabacion.stream;
-  } catch {
-    return null;
-  }
-}
-
 function tono(frecuencia: number, duracion: number, volumen: number, tipo: OscillatorType = "triangle", retraso = 0) {
   const ctx = contextoAudio();
   if (!ctx) return;
@@ -127,7 +119,6 @@ function tono(frecuencia: number, duracion: number, volumen: number, tipo: Oscil
   gain.gain.setValueAtTime(volumen, t0);
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duracion);
   osc.connect(gain).connect(ctx.destination);
-  if (salidaGrabacion) gain.connect(salidaGrabacion);
   osc.start(t0);
   osc.stop(t0 + duracion + 0.02);
 }
@@ -144,6 +135,7 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
   const puntero = useRef<SVGGElement>(null);
   const rotacion = useRef(0);
   const rotacionViva = useRef(0);
+  const plan = useRef<PlanGiroRuleta | null>(null);
   const [girando, setGirando] = useState(false);
   const [bajoPuntero, setBajoPuntero] = useState<string | null>(null);
   // Etiquetas por segmento: durante el giro se enderezan cuadro a cuadro
@@ -187,6 +179,7 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
     const hasta = desde + 360 * VUELTAS + ajuste;
     const reducido = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const duracion = reducido ? 1500 : DURACION;
+    plan.current = { desde, hasta, duracion, segmentos };
 
     if (sonido) contextoAudio();
     setGirando(true);
@@ -229,7 +222,7 @@ export const RuletaSorteo = forwardRef<RuletaHandle, Props>(function RuletaSorte
     requestAnimationFrame(cuadro);
   }), [total, segmentos, segmentoEn, sonido, anonima]);
 
-  useImperativeHandle(ref, () => ({ girarHacia, rotacion: () => rotacionViva.current }), [girarHacia]);
+  useImperativeHandle(ref, () => ({ girarHacia, ultimoGiro: () => plan.current }), [girarHacia]);
 
   return (
     <div className="flex w-full flex-col items-center gap-5">

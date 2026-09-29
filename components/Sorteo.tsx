@@ -13,9 +13,10 @@
  * - Gira solo el operador, con la clave SORTEO_CLAVE del panel (botón
  *   «Operador» al pie). El ganador lo elige el panel; todas las pantallas
  *   consultan /api/sorteo/ganadores cada pocos segundos y giran hasta él.
- * - «Grabar giro» (operador): al tocar GIRAR la ruleta se agranda, el fondo se
- *   difumina y se graba un video del giro hasta el ganador (lib/grabacion.ts),
- *   que se descarga solo al terminar.
+ * - «Grabar giro» (operador): al tocar GIRAR la ruleta se agranda y el fondo
+ *   se difumina; cuando sale el ganador se genera el video del giro cuadro a
+ *   cuadro, con el sonido sincronizado (lib/grabacion.ts), y se descarga
+ *   solo. No se graba en vivo: así el giro en pantalla no se traba.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -25,16 +26,14 @@ import {
   RotateCcw, Ticket, Trophy, Users, Video, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Ganador, InfoSorteo, Participante, RespuestaGanadores, RespuestaSorteo } from "@/lib/tipos";
-import { GrabadoraGiro, type EstadoVideo } from "@/lib/grabacion";
-import { RuletaSorteo, audioParaGrabar, calcularSegmentos, fanfarria, type RuletaHandle, type SegmentoRuleta } from "./RuletaSorteo";
+import { generarVideoGiro, puedeGenerarVideo } from "@/lib/grabacion";
+import { RuletaSorteo, fanfarria, type RuletaHandle, type SegmentoRuleta } from "./RuletaSorteo";
 import { dinero, nombreMes } from "./formato";
 
 const SONDEO_MS = 5000;
 const CLAVE_SESION = "sorteo:clave";
 const PREF_GRABAR = "sorteo:grabar";
 const CONFETI = ["#1737d8", "#1a9ad6", "#0a5fb4", "#f5b72b", "#ffffff", "#39e27d"];
-/** Segundos de video después de que sale el ganador (cartel + confeti). */
-const COLA_VIDEO_MS = 5500;
 
 const leerClave = () => {
   try { return sessionStorage.getItem(CLAVE_SESION) || ""; } catch { return ""; }
@@ -108,11 +107,13 @@ export function Sorteo() {
   // Grabación del giro
   const [puedeGrabar, setPuedeGrabar] = useState(false);
   const [grabar, setGrabar] = useState(false);
+  // Este giro se graba (se decide al tocar GIRAR).
+  const grabarEsteGiro = useRef(false);
   const [grabando, setGrabando] = useState(false);
+  // Avance de la generación del video (0 a 1); null = no se está generando.
+  const [preparando, setPreparando] = useState<number | null>(null);
   const [enfoque, setEnfoque] = useState(false);
   const [videoListo, setVideoListo] = useState<string | null>(null);
-  const grabadora = useRef<GrabadoraGiro | null>(null);
-  const ganadorVideo = useRef<EstadoVideo["ganador"]>(null);
 
   const raiz = useRef<HTMLDivElement>(null);
   const lienzo = useRef<HTMLCanvasElement>(null);
@@ -120,7 +121,7 @@ export function Sorteo() {
   const ruleta = useRef<RuletaHandle>(null);
 
   useEffect(() => {
-    setPuedeGrabar(GrabadoraGiro.soportado());
+    void puedeGenerarVideo().then(setPuedeGrabar);
     setGrabar(leerPref(PREF_GRABAR));
   }, []);
 
@@ -244,23 +245,18 @@ export function Sorteo() {
   const enJuego = enRuleta.filter((c) => c.id !== destacado);
   const ticketsEnRuleta = enJuego.reduce((s, c) => s + c.tickets, 0);
 
-  // La grabación lee el estado en cada cuadro: refs, no estado de React.
-  const vivo = useRef({ enRuleta, animando, destacado });
-  vivo.current = { enRuleta, animando, destacado };
-  const estadoVideo = useCallback((): EstadoVideo => ({
-    rotacion: ruleta.current?.rotacion() ?? 0,
-    segmentos: calcularSegmentos(vivo.current.enRuleta),
-    resaltado: vivo.current.animando ? null : vivo.current.destacado,
-    girando: vivo.current.animando,
-    ganador: ganadorVideo.current,
-  }), []);
-
-  const terminarGrabacion = useCallback(async (numero: number) => {
-    const g = grabadora.current;
-    grabadora.current = null;
-    if (!g || !info) { setGrabando(false); return; }
+  /** Genera el video del giro que acaba de terminar (con el plan que usó la ruleta) y lo descarga. */
+  const hacerVideo = useCallback(async (ganador: Ganador, numero: number) => {
+    const plan = ruleta.current?.ultimoGiro();
+    if (!plan || !info) return;
+    setPreparando(0);
     try {
-      const { blob, extension } = await g.detener();
+      const { blob, extension } = await generarVideoGiro({
+        titulo: tituloDe(info),
+        plan,
+        ganador: { id: ganador.partnerId, nombre: ganador.nombre, tickets: ganador.tickets, numero },
+        onProgreso: (p) => setPreparando(p),
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -271,10 +267,9 @@ export function Sorteo() {
       setTimeout(() => URL.revokeObjectURL(url), 120_000);
       setVideoListo(a.download);
     } catch (e: any) {
-      setAviso(e?.message || "No se pudo guardar el video");
+      setAviso(`No se pudo generar el video: ${e?.message || "error"}`);
     } finally {
-      ganadorVideo.current = null;
-      setGrabando(false);
+      setPreparando(null);
     }
   }, [info]);
 
@@ -299,44 +294,37 @@ export function Sorteo() {
       setResultado(pendiente);
       if (sonido) fanfarria();
       celebrar();
-      if (grabadora.current) {
-        ganadorVideo.current = { nombre: pendiente.nombre, tickets: pendiente.tickets, numero };
-        grabadora.current.celebrar();
-        setTimeout(() => void terminarGrabacion(numero), COLA_VIDEO_MS);
-      }
       setAnimando(false);
+      if (grabarEsteGiro.current) {
+        grabarEsteGiro.current = false;
+        setGrabando(false);
+        void hacerVideo(pendiente, numero);
+      }
     })();
-  }, [ganadores, revelados, animando, info, destacado, sonido, celebrar, terminarGrabacion]);
+  }, [ganadores, revelados, animando, info, destacado, sonido, celebrar, hacerVideo]);
 
   // Si anulan al ganador destacado, deja de estar resaltado.
   useEffect(() => {
     if (destacado !== null && !idsGanadores.has(destacado)) setDestacado(null);
   }, [destacado, idsGanadores]);
 
-  // El enfoque (ruleta grande, fondo difuminado) termina cuando ya no se graba
-  // y se cerró el cartel del ganador.
+  // El enfoque (ruleta grande, fondo difuminado) termina cuando ya no se
+  // graba ni se prepara el video y se cerró el cartel del ganador.
   useEffect(() => {
-    if (enfoque && !grabando && !pidiendo && !animando && !resultado) setEnfoque(false);
-  }, [enfoque, grabando, pidiendo, animando, resultado]);
+    if (enfoque && !grabando && preparando === null && !pidiendo && !animando && !resultado) setEnfoque(false);
+  }, [enfoque, grabando, preparando, pidiendo, animando, resultado]);
 
   const girar = async () => {
-    if (!esOperador || pidiendo || animando || grabando) return;
+    if (!esOperador || pidiendo || animando || grabando || preparando !== null) return;
     setPidiendo(true);
     setAviso(null);
     setVideoListo(null);
     if (grabar && puedeGrabar && info) {
-      try {
-        const g = new GrabadoraGiro({ titulo: tituloDe(info), estado: estadoVideo, audio: sonido ? audioParaGrabar() : null });
-        setEnfoque(true);
-        setGrabando(true);
-        await g.iniciar();
-        grabadora.current = g;
-        // Un instante de ruleta quieta antes del giro (y el tiempo del zoom).
-        await new Promise((r) => setTimeout(r, 900));
-      } catch (e: any) {
-        setGrabando(false);
-        setAviso(`No se pudo empezar a grabar: ${e?.message || "error"}. Se gira sin grabar.`);
-      }
+      grabarEsteGiro.current = true;
+      setGrabando(true);
+      setEnfoque(true);
+      // El tiempo del zoom antes de que arranque el giro.
+      await new Promise((r) => setTimeout(r, 600));
     }
     try {
       const r = await fetch("/api/sorteo/girar", { method: "POST", headers: cabeceras() });
@@ -345,8 +333,7 @@ export function Sorteo() {
       const g: Ganador = j.data;
       setGanadores((prev) => (prev.some((x) => x.id === g.id) ? prev : [...prev, g]));
     } catch (e: any) {
-      grabadora.current?.cancelar();
-      grabadora.current = null;
+      grabarEsteGiro.current = false;
       setGrabando(false);
       setAviso(e.message || "No se pudo girar");
     } finally {
@@ -383,7 +370,7 @@ export function Sorteo() {
     setEsOperador(false);
   };
 
-  const ocupado = pidiendo || animando || grabando;
+  const ocupado = pidiendo || animando || grabando || preparando !== null;
 
   return (
     <div ref={raiz} className={pantallaCompleta ? "h-screen overflow-y-auto bg-[#040b24] p-4 md:p-8" : "min-h-screen bg-[#040b24] px-4 py-6 md:px-8"}>
@@ -443,6 +430,7 @@ export function Sorteo() {
                           <span className="h-2 w-2 animate-pulse rounded-full bg-white" /> REC
                         </span>
                       )}
+                      {preparando !== null && <ChipPreparando progreso={preparando} />}
                     </div>
                   )}
                   <RuletaSorteo
@@ -462,6 +450,7 @@ export function Sorteo() {
                     <AlertTriangle size={15} /> {aviso}
                   </p>
                 )}
+                {preparando !== null && !enfoque && <ChipPreparando progreso={preparando} />}
                 {videoListo && (
                   <p className="mt-2 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-2 text-sm text-emerald-200">
                     <Video size={15} /> Video guardado en Descargas: {videoListo}
@@ -590,6 +579,14 @@ export function Sorteo() {
         @media (prefers-reduced-motion: reduce) { .sorteo-enfoque { animation: none; } }
       `}</style>
     </div>
+  );
+}
+
+function ChipPreparando({ progreso }: { progreso: number }) {
+  return (
+    <span className="mt-2 flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+      <Video size={13} className="text-rose-300" /> Preparando video… {Math.round(progreso * 100)}%
+    </span>
   );
 }
 

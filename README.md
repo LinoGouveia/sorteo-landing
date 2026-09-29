@@ -19,9 +19,11 @@ Navegador ──► sorteo-landing (/api/sorteo/*) ──► panel (/api/sorteo/
   trae los nombres (solo id y tickets); el nombre se conoce cuando gana, en el cartel y la lista de **ganadores**.
 - **Girar**: solo el operador, con la clave `SORTEO_CLAVE` del panel (botón «Operador» al pie). También se puede
   girar desde el panel: todas las pantallas sondean los ganadores cada 5 s y giran hasta el nuevo.
-- **Grabar giro** (operador): al tocar GIRAR la ruleta se agranda, el fondo se difumina y se graba un video
-  cuadrado de 1080×1080 del giro hasta el ganador, con sonido, cartel y confeti (`lib/grabacion.ts`). Se descarga
-  solo al terminar (MP4 en Chrome/Edge/Safari; WebM donde no haya MP4).
+- **Grabar giro** (operador): al tocar GIRAR la ruleta se agranda y el fondo se difumina. Cuando sale el ganador
+  se **genera** el video del giro (MP4 1080×1080, ~16 s, con sonido, cartel y confeti) y se descarga solo, a los pocos
+  segundos (`lib/grabacion.ts`). No se graba en vivo: se dibuja cuadro por cuadro a 30 fps exactos a partir del plan
+  del giro y el sonido se sintetiza con la misma línea de tiempo, así no se traba ni se desfasa. Usa WebCodecs
+  (Chrome, Edge, Safari 16.4+, Firefox 130+) vía `mediabunny`; donde no hay, el botón no aparece.
 - **Cambio de sorteo**: si en el panel cambian la sede, el mes o el monto, las pantallas abiertas se actualizan solas.
 - **Si el panel no responde**: se muestran los últimos datos, con aviso, y no se puede girar.
 
@@ -54,5 +56,5 @@ Servicio nuevo desde este repo con el `Dockerfile` (Next.js standalone, puerto 3
 
 Los tipos están en `lib/tipos.ts` y replican los de `lib/sorteo/*` del panel. `components/RuletaSorteo.tsx` es una copia
 del de `components/sorteo/` del panel con lo de la grabación agregado (rotación, segmentos y audio expuestos): si se
-corrige algo de la ruleta allá, traerlo acá. `lib/grabacion.ts` redibuja la misma geometría en canvas: si cambia la
-ruleta, cambiarla también ahí.
+corrige algo de la ruleta allá, traerlo acá. `lib/grabacion.ts` redibuja la misma geometría en canvas (y la misma curva
+del giro, `easeOut`): si cambia la ruleta, cambiarla también ahí.

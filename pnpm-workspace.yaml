@@ -1,0 +1,6 @@
+# No es un monorepo: solo da permiso de build a las dependencias con script
+# de instalación (pnpm 10+ aborta con ERR_PNPM_IGNORED_BUILDS sin esto). El
+# Dockerfile copia este archivo antes de `pnpm install`.
+allowBuilds:
+  '@tailwindcss/oxide': true
+  sharp: true

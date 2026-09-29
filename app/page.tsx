@@ -1,5 +1,5 @@
-import { SorteoCaracas } from "@/components/SorteoCaracas";
+import { Sorteo } from "@/components/Sorteo";
 
 export default function Page() {
-  return <SorteoCaracas />;
+  return <Sorteo />;
 }

@@ -2,7 +2,7 @@
   "name": "sorteo-landing",
   "version": "1.0.0",
   "private": true,
-  "description": "Landing pública del sorteo de clientes de Supricom Caracas (sorteo.supricom.com.ve). Los datos y los giros los da el panel.",
+  "description": "Landing pública del sorteo de clientes de Supricom (sorteo.supricom.com.ve). El sorteo activo, los datos y los giros los da el panel.",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
@@ -15,8 +15,7 @@
     "next": "16.2.12",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "server-only": "^0.0.1",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
